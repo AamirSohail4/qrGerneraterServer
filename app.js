@@ -11,7 +11,7 @@ const emailRoutes = require("./routes/event_emails_logs.Routes");
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 6000;
 // const eventEmailService = new Event_Email();
 
 // Middleware

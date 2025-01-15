@@ -2,38 +2,43 @@ const { response } = require("express");
 const pool = require("../config/db");
 
 class User {
-  // 1, Get all User
   static async getAllUsers() {
-    const query = "SELECT * FROM users";
+    const query = `
+      SELECT 
+        users.*, 
+        user_group.groupname 
+      FROM 
+        users
+      LEFT JOIN 
+        user_group 
+      ON 
+        users.user_group_id = user_group.id
+    `;
     try {
       const result = await pool.query(query);
-
-      // Transform the result into the desired format
-      const formattedUsers = result.rows.map((user) => ({
-        intID: user.id,
-        strName: user.name,
-        strMobile: user.mobile_number,
-        strEmail: user.email,
-        strRemarks: user.remarks || "",
-        intRole: user.role,
-        strPicture: user.picture || "",
-        dtCreated_at: user.created_at,
-        dtUpdated_at: user.updated_at,
-      }));
-
-      return formattedUsers;
+      return result.rows;
     } catch (error) {
-      console.error("Error Getting users", error);
+      console.error("Error Getting users:", error);
       throw error;
     }
   }
+
   //for login
 
   static async getLogin_email(email) {
     try {
-      const result = await pool.query("SELECT * FROM users WHERE email = $1", [
-        email,
-      ]);
+      const result = await pool.query(
+        `SELECT 
+        users.*, 
+        user_group.groupname 
+      FROM 
+        users
+      LEFT JOIN 
+        user_group 
+      ON 
+        users.user_group_id = user_group.id WHERE email = $1`,
+        [email]
+      );
       return result.rows[0];
     } catch (error) {
       throw new Error("Error fetching user data: " + error.message);
@@ -114,24 +119,24 @@ class User {
     }
   }
   //5 Creating User
-  // For OTP  Generating of User otp
-  static async creatingUser(data) {
-    const role = data.role || 1; // Default to role '1' if not provided
+
+  static async creatingNewUser(data) {
+    console.log("That is a data", data);
     const query = `
         INSERT INTO users(
-            name, mobile_number, email, password, picture, remarks, role
+            name, mobile, email, password, picture, remarks, user_group_id
         ) 
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *`;
 
     const values = [
-      data.name, // $1 - name
-      data.mobile_number, // $2 - mobile_number
-      data.email, // $3 - email
-      data.password, // $4 - password
-      data.picture || "", // $5 - picture (can be empty string)
-      data.remarks || "", // $6 - remarks (can be empty string)
-      role, // $7 - role
+      data.name,
+      data.mobile,
+      data.email,
+      data.password,
+      data.picture || "",
+      data.remarks || "",
+      data.user_group_id,
     ];
 
     try {
@@ -146,48 +151,31 @@ class User {
   //Updating Users
   static async editUser(id, data) {
     const query = `
-    UPDATE users SET
-      role_id=$1, 
-      user_group_id=$2, 
-      user_name=$3, 
-      first_name=$4, 
-      last_name=$5, 
-      gender=$6, 
-      phone_number=$7,  
-      image_path=$8, 
-      device_type=$9, 
-      device_platform=$10, 
-      lattitude=$11, 
-      longitude=$12, 
-      verification_code=$13, 
-      is_verified=$14, 
-      is_active=$15, 
-      fcm_token=$16 
-    WHERE id=$17 
-    RETURNING *`;
+      UPDATE users SET
+        name = COALESCE($1, name), 
+        mobile = COALESCE($2, mobile),
+        email = COALESCE($3, email),
+        picture = COALESCE($4, picture),
+        remarks = COALESCE($5, remarks),
+        user_group_id = COALESCE($6, user_group_id)
+      WHERE id = $7
+      RETURNING *`;
 
     const values = [
-      data.role_id,
-      data.user_group_id,
-      data.user_name,
-      data.first_name,
-      data.last_name,
-      data.gender,
-      data.phone_number,
-      data.image_path,
-      data.device_type,
-      data.device_platform,
-      data.lattitude,
-      data.longitude,
-      data.verification_code,
-      data.is_verified,
-      data.is_active,
-      data.fcm_token,
+      data.name || null,
+      data.mobile || null,
+      data.email || null,
+      data.picture || null,
+      data.remarks || null,
+      data.user_group_id || null,
       id,
     ];
 
     try {
       const result = await pool.query(query, values);
+      if (result.rows.length === 0) {
+        throw new Error("User not found or no changes made.");
+      }
       return result.rows[0];
     } catch (error) {
       console.error("Error when editing user:", error);
@@ -195,12 +183,21 @@ class User {
     }
   }
 
-  static async existingUserByUser_email(email) {
-    // Query the database to check if the email already exists
-    const result = await pool.query("SELECT * FROM users WHERE email = $1", [
-      email,
-    ]);
-    return result.rows[0]; // Return the user if found
+  static async existingUsergroup(groupname) {
+    const query = `
+        SELECT * FROM user_group
+        WHERE groupname = $1
+        LIMIT 1`;
+
+    const values = [groupname];
+
+    try {
+      const result = await pool.query(query, values);
+      return result.rows[0]; // Return the matching group, if found
+    } catch (error) {
+      console.error("Error checking for existing user group:", error);
+      throw error;
+    }
   }
 
   static async existingUserByMobileNumber(mobile_number) {
@@ -231,6 +228,136 @@ class User {
       return result.rows[0]; // Return user if found
     } catch (error) {
       console.error("Error in Login", error);
+      throw error;
+    }
+  }
+
+  //User Group
+  static async getAllUserGroups() {
+    const query = "SELECT * FROM user_group";
+    try {
+      const result = await pool.query(query);
+      return result.rows;
+    } catch (error) {
+      console.error("Error fetching user groups:", error);
+      throw error;
+    }
+  }
+  static async userGroupDelete(id) {
+    const query = "DELETE FROM user_group Where id=$1";
+    try {
+      const result = await pool.query(query, [id]);
+      return result.rowCount;
+    } catch (error) {
+      console.error("Having Erro on Delete the user Group", error);
+      throw error;
+    }
+  }
+  //Chack User By  Email
+  static async existingUserBYemail(email) {
+    const query = "SELECT * FROM users Where email=$1";
+    try {
+      const result = await pool.query(query, [email]);
+      return result.rows[0];
+    } catch (error) {
+      console.error("Error on getting User for existing email ", error);
+      throw error;
+    }
+  }
+
+  //1 Get User against single Id
+  static async getUser_groupById(id) {
+    const query = "SELECT * FROM user_group Where id=$1";
+
+    try {
+      const result = await pool.query(query, [id]);
+      return result.rows[0];
+    } catch (error) {
+      console.error("Error Getting on user_group", error);
+      throw error;
+    }
+  }
+
+  //creating user group
+  static async creatingUser_group(data) {
+    const query = `
+        INSERT INTO user_group (
+            groupname
+        ) 
+        VALUES ($1)
+        RETURNING *`;
+
+    const values = [
+      data.groupname, // $1 - groupname
+    ];
+
+    try {
+      const result = await pool.query(query, values);
+      return result.rows[0]; // Return the first group from the returned rows
+    } catch (error) {
+      console.error("Error creating user group:", error);
+      throw error;
+    }
+  }
+
+  //Edit User Group Model
+  // static async editUser_group(id, data) {
+  //   const query = `
+  //   UPDATE user_group SET
+  //     groupname=$1
+  //        WHERE id=$2
+  //   RETURNING *`;
+
+  //   const values = [data.groupname, id];
+
+  //   try {
+  //     const result = await pool.query(query, values);
+  //     return result.rows[0];
+  //   } catch (error) {
+  //     console.error("Error when editing user:", error);
+  //     throw error;
+  //   }
+  // }
+  // //1 Get User against single Id
+  // static async getUser_groupById(id) {
+  //   const query = "SELECT * FROM user_group Where id=$1";
+
+  //   try {
+  //     const result = await pool.query(query, [id]);
+  //     return result.rows[0];
+  //   } catch (error) {
+  //     console.error("Error Getting on user_group", error);
+  //     throw error;
+  //   }
+  // }
+  // Check if the groupname exists in the table, excluding the current id
+  static async checkGroupnameExists(groupname, currentId) {
+    const query = "SELECT * FROM user_group WHERE groupname = $1 AND id != $2";
+
+    try {
+      const result = await pool.query(query, [groupname, currentId]);
+      // If any record is found, it means the groupname already exists
+      return result.rows.length > 0;
+    } catch (error) {
+      console.error("Error checking groupname:", error);
+      throw error;
+    }
+  }
+
+  static async editUser_group(id, data) {
+    const query = `
+      UPDATE user_group SET
+        groupname = $1
+      WHERE id = $2
+      RETURNING *`;
+
+    const values = [data.groupname, id];
+
+    try {
+      const result = await pool.query(query, values);
+      return result.rows[0];
+    } catch (error) {
+      console.error("Error when editing user:", error);
       throw error;
     }
   }

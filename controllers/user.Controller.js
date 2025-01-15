@@ -74,6 +74,7 @@ exports.userLogin = async (req, res) => {
   try {
     // Use email to find the user
     const existingUser = await User.getLogin_email(email);
+    console.log("That is a existingUser=> data", existingUser);
 
     if (!existingUser) {
       return res.status(404).json({
@@ -96,7 +97,7 @@ exports.userLogin = async (req, res) => {
 
     // Create a JWT token
     const token = jwt.sign(
-      { userId: existingUser.id, role: existingUser.role },
+      { userId: existingUser.id, role: existingUser.groupname },
       "your_secret_key", // Use a proper secret key here (ideally from environment variables)
       { expiresIn: "1h" } // Optional: Set the expiration time for the token
     );
@@ -110,7 +111,7 @@ exports.userLogin = async (req, res) => {
         id: existingUser.id,
         name: existingUser.name,
         email: existingUser.email,
-        role: existingUser.role,
+        role: existingUser.groupname,
       },
     });
   } catch (error) {
@@ -125,20 +126,36 @@ exports.userLogin = async (req, res) => {
 exports.getAllUsers = async (req, res) => {
   try {
     const users = await User.getAllUsers();
+
+    // Map through users to format the response
+    const formattedUsers = users.map((user) => ({
+      intID: user.id,
+      strName: user.name,
+      strMobile: user.mobile,
+      strEmail: user.email,
+      strRemarks: user.remarks || "",
+      strPicture: user.picture || "",
+      dtCreated_at: user.created_at,
+      dtUpdated_at: user.updated_at,
+      strGroupName: user.groupname || "",
+      intGroupID: user.id,
+    }));
+
     res.status(200).json({
       success: true,
-      message: "All Users fetch  successfully",
-      data: users,
+      message: "success",
+      data: formattedUsers,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Error fetching users:", error);
     res.status(500).json({
       success: false,
-      message: "All Users fetch  successfully",
+      message: "Failed to fetch users",
       error: error.message,
     });
   }
 };
+
 //2 Get Single User Id
 exports.getUserById = async (req, res) => {
   const id = req.params.id;
@@ -195,7 +212,8 @@ exports.userDelete = async (req, res) => {
   }
 };
 
-exports.createNewUser = async (req, res) => {
+exports.registerNewUser = async (req, res) => {
+  console.log("That is a Controlloer", req.body);
   if (!req.body) {
     return res.status(400).json({
       success: false,
@@ -203,18 +221,18 @@ exports.createNewUser = async (req, res) => {
     });
   }
 
-  const { name, mobile_number, email, password, remarks, role } = req.body;
+  const { name, mobile, email, password, remarks, user_group_id } = req.body;
 
-  if (!name || !password || !email) {
+  if (!name || !password || !email || !user_group_id) {
     return res.status(400).json({
       success: false,
-      message: "Missing required fields: name, email, password.",
+      message: "Missing required fields: name, email, password,user_group_id.",
     });
   }
 
   try {
     // Check if the username already exists
-    const existingUseremail = await User.existingUserByUser_email(email);
+    const existingUseremail = await User.existingUserBYemail(email);
     if (existingUseremail) {
       return res.status(409).json({
         success: false,
@@ -228,16 +246,16 @@ exports.createNewUser = async (req, res) => {
     // Prepare user data for insertion
     const data = {
       name,
-      mobile_number,
+      mobile,
       email,
       password: hashedPassword,
       remarks,
-      role,
+      user_group_id,
       picture: req.file ? req.file.path.replace(/\\/g, "/") : "", // Save the file path if uploaded
     };
     console.log("That is a Data that are comming", data);
     // Create the new user in the database
-    const createdNewUser = await User.creatingUser(data);
+    const createdNewUser = await User.creatingNewUser(data);
 
     return res.status(201).json({
       success: true,
@@ -246,7 +264,7 @@ exports.createNewUser = async (req, res) => {
     });
   } catch (err) {
     // Check for duplicate key error
-    if (err.code === "23505" && err.detail.includes("mobile_number")) {
+    if (err.code === "23505" && err.detail.includes("mobile")) {
       // Return a specific error message for duplicate mobile number
       return res
         .status(400)
@@ -261,118 +279,49 @@ exports.createNewUser = async (req, res) => {
 };
 
 // Updating End Point
-exports.updateUser = async (req, res) => {
-  if (!req.body) {
+exports.EditUser = async (req, res) => {
+  const { id } = req.params;
+  if (!id) {
     return res.status(400).json({
       success: false,
-      message: "Request body is missing.",
+      message: "User ID is required.",
     });
   }
 
-  let userid, roleid;
-
   try {
-    // Extract and verify the token
-    const token = req.headers.authorization?.split(" ")[1];
+    // Fetch the existing user data
+    const existingUser = await User.existingUserById(id);
 
-    if (!token) {
-      return res.status(401).json({
+    if (!existingUser) {
+      return res.status(404).json({
         success: false,
-        message: "Token is missing",
+        message: "User not found.",
       });
     }
 
-    try {
-      const decode = jwt.verify(token, secretKey);
-      userid = decode.id;
-      roleid = decode.role_id;
-    } catch (error) {
-      if (error.name === "TokenExpiredError") {
-        return res.status(401).json({
-          success: false,
-          message: "Token has expired.",
-        });
-      } else if (error.name === "JsonWebTokenError") {
-        return res.status(401).json({
-          success: false,
-          message: "Invalid token.",
-        });
-      } else if (error.name === "NotBeforeError") {
-        return res.status(401).json({
-          success: false,
-          message: "Token is not active yet.",
-        });
-      } else {
-        console.error("Unexpected error with token verification:", error);
-        return res.status(500).json({
-          success: false,
-          message: "Unexpected error in token verification.",
-        });
-      }
-    }
-
-    if (!roleid) {
-      return res.status(400).json({
-        success: false,
-        message: "Role ID is missing in the token.",
-      });
-    }
-
-    const existingUser = await User.existingUserById(userid);
-
+    // Merge existing data with the request body
     const data = { ...existingUser, ...req.body };
 
+    // Handle profile picture update
     if (req.file) {
-      data.image_path = `uploads/${
-        roleid === 1 ? "patient" : "doctor"
-      }/${userid}/${req.file.originalname}`;
+      data.picture = req.file.path.replace(/\\/g, "/"); // Normalize path for cross-platform compatibility
     } else {
-      data.image_path = existingUser.image_path;
+      data.picture = existingUser.picture; // Retain the existing picture path
     }
 
-    if (req.body.password) {
-      data.password = await bcrypt.hash(req.body.password, 10);
-    } else {
-      data.password = existingUser.password;
-    }
+    // Call model to update the user
+    const updatedUser = await User.editUser(id, data);
 
-    const updatedUser = await User.updateUser(userid, data);
-    let roleData;
-
-    // Role-specific data update
-    if (roleid === 1) {
-      const existingPatientData = await Patient.getPatientById(userid);
-      if (!existingPatientData) {
-        return res.status(404).json({
-          success: false,
-          message: `Patient with ID ${userid} not found.`,
-        });
-      }
-      const patientData = { ...existingPatientData, ...req.body };
-
-      roleData = await Patient.editPatient(userid, patientData);
-    } else if (roleid === 2) {
-      const existingDoctorData = await Doctor.existingDoctorById(userid);
-      if (!existingDoctorData) {
-        return res.status(404).json({
-          success: false,
-          message: `Doctor with ID ${userid} not found.`,
-        });
-      }
-      const doctorData = { ...existingDoctorData, ...req.body };
-      roleData = await Doctor.updateDoctor(userid, doctorData);
-    }
-
-    res.status(201).json({
+    res.status(200).json({
       success: true,
-      message: "User and role-specific data updated successfully",
-      data: { user: updatedUser, roleData: roleData },
+      message: "User updated successfully.",
+      data: updatedUser,
     });
   } catch (error) {
     console.error("Error while updating user:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to update user",
+      message: "Failed to update user.",
       error: error.message,
     });
   }
@@ -431,5 +380,200 @@ exports.validateToken = async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+exports.getUserGroup = async (req, res) => {
+  try {
+    const userGroups = await User.getAllUserGroups();
+
+    // Check if userGroups is an array and not empty
+    if (userGroups.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No user groups found",
+      });
+    }
+
+    // Map over the userGroups array to send the appropriate response
+    const responseData = userGroups.map((group) => ({
+      intID: group.id,
+      strGroupName: group.groupname,
+      dtCreatedAt: group.created_at,
+      dtUpdateAt: group.updated_at,
+    }));
+
+    res.status(200).json({
+      success: true,
+      message: "All user groups fetched successfully",
+      data: responseData,
+    });
+  } catch (error) {
+    console.error("Error fetching user groups:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch user groups",
+      error: error.message,
+    });
+  }
+};
+
+exports.userGroupDelete = async (req, res) => {
+  const id = req.params.id;
+  try {
+    const deleteUserCount = await User.userGroupDelete(id);
+    if (deleteUserCount === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No record found with that ID",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "User_group with ID " + id + " deleted successfully",
+      data: id,
+    });
+  } catch (error) {
+    console.error("Error while deleting the user group", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete user group",
+      error: error.message,
+    });
+  }
+};
+exports.getUser_groupById = async (req, res) => {
+  const id = req.params.id;
+  try {
+    const result = await User.getUser_groupById(req.params.id);
+    console.log("That is a result", result);
+    if (!result) {
+      return res.status(400).json({
+        success: false,
+        message: "User against the id not found",
+        data: id,
+      });
+    }
+    res.status(200).json({
+      success: true,
+      message: "User Found Successfuly",
+      data: result,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "User not Found",
+      error: error.message,
+    });
+  }
+};
+//creating user
+exports.createNewUser_group = async (req, res) => {
+  if (!req.body) {
+    return res.status(400).json({
+      success: false,
+      message: "Request body is missing.",
+    });
+  }
+
+  const { groupname } = req.body;
+
+  if (!groupname) {
+    return res.status(400).json({
+      success: false,
+      message: "Missing required field: groupname",
+    });
+  }
+
+  try {
+    // Check if the group name already exists
+    const existingGroup = await User.existingUsergroup(groupname);
+    if (existingGroup) {
+      return res.status(409).json({
+        success: false,
+        message: "Group with that name already exists.",
+      });
+    }
+
+    // Prepare group data for insertion
+    const data = {
+      groupname, // Pass the correct field name
+    };
+
+    // Create the new group in the database
+    const createdNewGroup = await User.creatingUser_group(data);
+
+    return res.status(201).json({
+      success: true,
+      message: "User group created successfully.",
+      data: createdNewGroup,
+    });
+  } catch (error) {
+    console.error("Error creating user group:", error);
+    return res.status(500).json({
+      success: false,
+      message: "An error occurred while creating the user group.",
+      error: error.message,
+    });
+  }
+};
+//Edit userGroup
+
+exports.updateUser = async (req, res) => {
+  const { intGroupID } = req.params;
+  console.log("That is intGroupID", intGroupID);
+
+  if (!req.body) {
+    return res.status(400).json({
+      success: false,
+      message: "Request body is missing.",
+    });
+  }
+
+  try {
+    // Fetch the existing user data based on the group ID
+    const existingUser = await User.getUser_groupById(intGroupID);
+
+    if (!existingUser) {
+      return res.status(404).json({
+        success: false,
+        message: "User group not found.",
+      });
+    }
+
+    // Check if the groupname is being updated
+    const newGroupName = req.body.groupname || existingUser.groupname;
+
+    // Check if the new groupname already exists (excluding the current record)
+    const existingGroupnameCheck = await User.checkGroupnameExists(
+      newGroupName,
+      intGroupID
+    );
+
+    if (existingGroupnameCheck) {
+      return res.status(400).json({
+        success: false,
+        message: `Group name "${newGroupName}" already exists.`,
+      });
+    }
+
+    // If the groupname is valid and does not exist, proceed with the update
+    const data = { ...existingUser, ...req.body };
+    const updatedUser = await User.editUser_group(intGroupID, data);
+
+    res.status(200).json({
+      success: true,
+      message: "User group data updated successfully",
+      data: updatedUser,
+    });
+  } catch (error) {
+    console.error("Error while updating user:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update user",
+      error: error.message,
+    });
   }
 };

@@ -27,10 +27,32 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
-router.post("/add", upload.single("picture"), userController.createNewUser);
+router.post(
+  "/createNew",
+  upload.single("picture"),
+  userController.registerNewUser
+);
+router.patch("/edit/:id", upload.single("picture"), userController.EditUser);
+
 router.get("/users", userController.getAllUsers);
 router.get("/users/:id", userController.getUserById);
 router.post("/userLogin", upload.none(), userController.userLogin);
 router.delete("/users/:id", userController.userDelete);
+
+//For User Group
+router.get("/user_group", userController.getUserGroup);
+router.delete("/user_group/:id", userController.userGroupDelete);
+router.get("/user_group/:id", userController.getUser_groupById);
+router.post(
+  "/add_user_group",
+  upload.none(),
+  userController.createNewUser_group
+);
+
+router.patch(
+  "/edit_user_group/:intGroupID",
+  upload.none(),
+  userController.updateUser
+);
 
 module.exports = router;
