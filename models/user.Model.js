@@ -46,16 +46,48 @@ class User {
   }
   //1 Get User against single Id
   static async getUserById(id) {
-    const query = "SELECT * FROM users Where id=$1";
+    const query = `
+      SELECT 
+        users.*, 
+        user_group.groupname 
+      FROM 
+        users
+      LEFT JOIN 
+        user_group 
+      ON 
+        users.user_group_id = user_group.id 
+      WHERE 
+        users.id = $1`; // Query based on the user's ID
 
     try {
-      const result = await pool.query(query, [id]);
-      return result.rows[0];
+      const result = await pool.query(query, [id]); // Pass the ID as a parameter
+      return result.rows[0]; // Return the first matching row
     } catch (error) {
-      console.error("Error Getting on users", error);
+      console.error("Error getting user by ID:", error);
       throw error;
     }
   }
+
+  // static async getUserById(id) {
+  //   const query =  `SELECT
+  //   users.*,
+  //   user_group.groupname
+  // FROM
+  //   users
+  // LEFT JOIN
+  //   user_group
+  // ON
+  //   users.user_group_id = user_group.id WHERE email = $1`,
+  //   [id];
+
+  //   try {
+  //     const result = await pool.query(query, [id]);
+  //     return result.rows[0];
+  //   } catch (error) {
+  //     console.error("Error Getting on users", error);
+  //     throw error;
+  //   }
+  // }
   //2 Update user
   static async updateUser(id, data) {
     const query = `
